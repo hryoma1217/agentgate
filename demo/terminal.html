@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>agentgate demo</title>
+<style>
+  :root{
+    --bg:#0b1220; --panel:#111a2b; --bar:#16203400; --txt:#cdd6e4;
+    --dim:#7488a6; --green:#5bd16a; --red:#ff7a6e; --amber:#ffc24b;
+    --cyan:#5fd3e0; --gate:#7aa2ff; --prompt:#7aa2ff;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:#060a13}
+  .wrap{width:1240px;padding:40px 46px 46px;background:#060a13}
+  .term{
+    background:var(--bg);border:1px solid #223048;border-radius:14px;
+    box-shadow:0 26px 64px rgba(0,0,0,.6);overflow:hidden;
+  }
+  .bar{display:flex;align-items:center;gap:8px;padding:13px 18px;background:#0f1828;border-bottom:1px solid #223048}
+  .dot{width:13px;height:13px;border-radius:50%}
+  .r{background:#ff5f56}.y{background:#ffbd2e}.g{background:#27c93f}
+  .barttl{margin-left:10px;color:var(--dim);font:600 13px/1 ui-monospace,Menlo,Consolas,monospace}
+  .gatechip{margin-left:auto;display:inline-flex;align-items:center;gap:6px;color:var(--gate);font:700 12px/1 ui-monospace,monospace;border:1px solid #2c3e63;border-radius:999px;padding:5px 11px;background:#101b30}
+  .body{
+    padding:28px 32px 32px;
+    font:15px/1.66 ui-monospace,"Cascadia Code","Source Han Code JP",Menlo,Consolas,"Noto Sans Mono CJK JP",monospace;
+    color:var(--txt);
+  }
+  .pl{color:var(--prompt);font-weight:700}
+  .cmd{color:#fff}
+  .dim{color:var(--dim)}
+  .green{color:var(--green)}.red{color:var(--red)}.amber{color:var(--amber)}
+  .cyan{color:var(--cyan)}.gate{color:var(--gate)}
+  .hl{background:rgba(255,194,75,.16);border-radius:3px;padding:0 3px;color:var(--amber);outline:1px dashed rgba(255,194,75,.5)}
+  .hlr{background:rgba(255,122,110,.16);border-radius:3px;padding:0 2px;color:#ffa79e}
+  .row{white-space:pre-wrap;word-break:break-word}
+  .gap{height:14px}
+  .badge{display:inline-block;background:var(--red);color:#0b1220;font-weight:800;border-radius:5px;padding:1px 7px;font-size:12px;letter-spacing:.4px}
+  .ok{display:inline-block;background:var(--green);color:#0b1220;font-weight:800;border-radius:5px;padding:1px 7px;font-size:12px;letter-spacing:.4px}
+  .cap{margin-top:18px;color:var(--dim);font-size:13px}
+  .title{margin:0 0 4px;color:#fff;font:800 23px/1.2 ui-sans-serif,system-ui,"Hiragino Kaku Gothic ProN",sans-serif}
+  .sub{margin:0 0 22px;color:var(--dim);font:14px/1.5 ui-sans-serif,system-ui,sans-serif}
+  .seg{border-left:2px solid #2c3e63;padding-left:12px;margin:2px 0 2px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1 class="title">agentgate — AIが書いたコードを、ディスクに着く前に止めるゲート</h1>
+  <p class="sub">Claude Code / Codex のフックに挿すだけ。bidi・不可視文字・<em>valid-but-wrong</em> な CJK を1つのゲートで検査し、モデルに直せる形で差し戻す</p>
+  <div class="term">
+    <div class="bar">
+      <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+      <span class="barttl">bash — agentgate hook</span>
+      <span class="gatechip">⛩ PreToolUse gate · 1 hook · N checks</span>
+    </div>
+    <div class="body">
+      <div class="row"><span class="dim"># 1. Claude Code が書こうとしたコードに、見えない bidi 制御文字 (U+202E) が紛れている</span></div>
+      <div class="row"><span class="pl">$</span> <span class="cmd">echo '{...,"content":"if user==\"admin\"<span class="hl">‹U+202E›</span># reject"}}'</span> | agentgate hook --stdin</span></div>
+      <div class="row dim">  ↑ <span class="amber">‹U+202E›</span> は画面に出ない RIGHT-TO-LEFT OVERRIDE。レビューでは「# reject」に見えても挙動が反転する</div>
+      <div class="gap"></div>
+      <div class="row"><span class="badge">BLOCKED</span> <span class="red"> 1 issue(s) to fix before this write</span></div>
+      <div class="row seg">auth.py:1:17  <span class="gate">unicode/AG-BIDI</span> <span class="red">HIGH</span>  U+202E <span class="amber">RIGHT-TO-LEFT OVERRIDE</span></div>
+      <div class="row seg dim">    Remove the bidi control char; it visually reorders source. <span class="red">(not suppressible)</span></div>
+      <div class="row dim">  exit 2 → Claude Code がツール呼び出しを<span style="color:#cdd6e4">拒否</span>し、この理由をモデルに渡す</div>
+      <div class="gap"></div>
+
+      <div class="row"><span class="dim"># 2. Codex の apply_patch。追加行に valid-but-wrong な漢字「闾」(本来は 閾)</span></div>
+      <div class="row"><span class="pl">$</span> <span class="cmd">cat patch.json | agentgate hook --stdin   <span class="dim"># tool_input.command の apply_patch を解析</span></span></div>
+      <div class="gap"></div>
+      <div class="row"><span class="badge">BLOCKED</span> <span class="red"> 1 issue(s) to fix before this write</span></div>
+      <div class="row seg">app.py:1:9  <span class="gate">cjk/MH001</span> <span class="red">HIGH</span>  '<span class="hlr">闾</span>'  -&gt; likely: <span class="cyan">閾</span></div>
+      <div class="row seg dim">    '闾' is a known LLM corruption (likely intended: 閾)  [rare_drift]</div>
+      <div class="row dim">  exit 2 · grep も単体テストも素通りする化け。mojihen エンジンを合成して検出</div>
+      <div class="gap"></div>
+
+      <div class="row"><span class="dim"># 3. クリーンな書き込みは静かに通す（モデルの邪魔をしない）</span></div>
+      <div class="row"><span class="pl">$</span> <span class="cmd">echo '{"hook_event_name":"PreToolUse","tool_input":{"file_path":"ok.py","content":"threshold = 0.8"}}'</span> | agentgate hook --stdin</span></div>
+      <div class="row"><span class="ok">PASS</span> <span class="green"> exit 0</span> <span class="dim">（出力なし）</span></div>
+      <div class="gap"></div>
+
+      <div class="row"><span class="dim"># 多言語は誤検出しない：アラビア語/ペルシャ語の ZWNJ・絵文字 ZWJ・行頭 BOM はクリーン</span></div>
+      <div class="row dim">  AG-BIDI=常時ブロック / AG-INVIS=コード文脈のみ / 抑制はルール単位のみ・bidi はロック</div>
+    </div>
+  </div>
+  <p class="cap">deterministic · offline · stdlib-only core · cross-agent (Claude Code + Codex) · composes <span style="color:#9fb4d6">mojihen</span> · open check registry</p>
+</div>
+</body>
+</html>

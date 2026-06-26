@@ -1,0 +1,11 @@
+- id: agentgate
+  name: agentgate unicode and CJK safety gate
+  description: >
+    Runs agentgate scan over staged files. Blocks on bidi control characters
+    and stray invisible chars in code out of the box. The optional CJK
+    corruption check (off by default) needs mojihen; enable it by adding
+    additional_dependencies: ["agentgate[cjk]"] in your .pre-commit-config.yaml.
+  entry: agentgate scan
+  language: python
+  types: [text]
+  pass_filenames: true

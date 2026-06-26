@@ -69,5 +69,5 @@ use PreToolUse so the write is blocked before it lands on disk.
 
 - agentgate reads config from `agentgate.toml` or `[tool.agentgate]` in
   `pyproject.toml` in the current working directory.
-- Default config has `cjk = false` (requires `pip install agentgate[cjk]` to enable).
+- Default config has `cjk = false` (requires `pip install agent-write-gate[cjk]` to enable).
 - Non-JSON or empty input always exits 0 (fail-open; gate never wedges the agent).

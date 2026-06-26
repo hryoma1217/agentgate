@@ -83,7 +83,7 @@ def _load_toml(path: Path) -> Optional[Dict[str, Any]]:
         except ImportError as exc:  # pragma: no cover - tomli is a declared dep
             raise ConfigError(
                 f"{path}: parsing TOML on Python < 3.11 requires the 'tomli' "
-                "package (install agentgate, which depends on it)."
+                "package (install agent-write-gate, which depends on it)."
             ) from exc
         decode_error = _toml.TOMLDecodeError
 

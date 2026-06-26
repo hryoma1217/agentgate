@@ -71,13 +71,13 @@ out of the box.
 Core (stdlib-only, unicode check):
 
 ```sh
-pip install agentgate
+pip install agent-write-gate
 ```
 
 With CJK check (requires mojihen):
 
 ```sh
-pip install agentgate[cjk]
+pip install agent-write-gate[cjk]
 ```
 
 Then enable in config:
@@ -166,7 +166,7 @@ hook also needs `mojihen` in pre-commit's isolated env — add it via
 
 ```yaml
       - id: agentgate
-        additional_dependencies: ["agentgate[cjk]"]
+        additional_dependencies: ["agent-write-gate[cjk]"]
 ```
 
 ## Configuration
@@ -176,7 +176,7 @@ defaults when no config file is found.
 
 ```toml
 # Unicode checks are ON by default; the CJK check is OFF by default.
-# Enable CJK only if you installed the `agentgate[cjk]` extra.
+# Enable CJK only if you installed the `agent-write-gate[cjk]` extra.
 [checks.cjk]
 enabled        = false
 min_confidence = "high"
@@ -225,7 +225,7 @@ write without human intervention.
 
 mojihen is the CJK engine (its own PyPI package, independently useful).
 agentgate is the cross-agent gate that composes it (optional extra
-`agentgate[cjk]`) with the stdlib Unicode-safety check, under one policy and
+`agent-write-gate[cjk]`) with the stdlib Unicode-safety check, under one policy and
 one model-readable feedback contract. Two focused packages; the gate + open
 registry is the ecosystem layer.
 

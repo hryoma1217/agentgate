@@ -127,7 +127,7 @@ def cmd_hook(args: List[str]) -> int:
             # Surface as clean error, not traceback
             print(
                 "agentgate: ERROR -- cjk check enabled but mojihen is not installed.\n"
-                "  Install it with:  pip install agentgate[cjk]\n"
+                "  Install it with:  pip install agent-write-gate[cjk]\n"
                 "  Or disable it:    set [checks] cjk = false in agentgate.toml",
                 file=sys.stderr,
             )
@@ -245,7 +245,7 @@ def cmd_scan(args: List[str]) -> int:
         except ImportError:
             print(
                 "agentgate: ERROR -- cjk check enabled but mojihen is not installed.\n"
-                "  Install it with:  pip install agentgate[cjk]\n"
+                "  Install it with:  pip install agent-write-gate[cjk]\n"
                 "  Or disable it:    set [checks] cjk = false in agentgate.toml",
                 file=sys.stderr,
             )
@@ -465,7 +465,7 @@ def cmd_checks(args: List[str]) -> int:
         pass
 
     if cjk_enabled and not mojihen_ok:
-        print(f"  cjk        {cjk_status}  [MISSING: mojihen -- run: pip install agentgate[cjk]]")
+        print(f"  cjk        {cjk_status}  [MISSING: mojihen -- run: pip install agent-write-gate[cjk]]")
     elif cjk_enabled and mojihen_ok:
         print(f"  cjk        {cjk_status}  (mojihen installed)")
     else:

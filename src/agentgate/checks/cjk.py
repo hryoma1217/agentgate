@@ -30,7 +30,7 @@ def _require_mojihen():
     except ImportError as exc:
         raise RuntimeError(
             "cjk check enabled but mojihen is not installed.\n"
-            "  Install it with:  pip install agentgate[cjk]\n"
+            "  Install it with:  pip install agent-write-gate[cjk]\n"
             "  Or disable it in config:  [checks]  cjk = false\n"
             f"  (Original error: {exc})"
         ) from exc

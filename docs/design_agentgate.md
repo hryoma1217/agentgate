@@ -29,7 +29,7 @@ Round 1 (8 points) and round 2 (3 points), all addressed:
    agentgate is a packaged, cross-agent policy + check bundle with an open registry
    and a model-readable feedback contract. See section 1.
 4. mojihen dependency resolved: `cjk` requires the `mojihen` package (extra
-   `agentgate[cjk]`). Default config has `cjk = false` so the stdlib-only core
+   `agent-write-gate[cjk]`). Default config has `cjk = false` so the stdlib-only core
    installs and runs out of the box; enabling `cjk` without mojihen is a loud
    startup error, never a silent no-op. See section 4 and 7.
 5. Unicode false-positive policy: bidi controls = always high/block. Invisible
@@ -178,7 +178,7 @@ cjk (built-in; requires `mojihen`): embeds `mojihen.detect.run_detectors` per li
 at `min_confidence` (default high); maps Finding -> Issue (suggestion = "likely:
 ..."). Default config has `cjk = false`. If `cjk` is enabled but `mojihen` is not
 importable -> the gate raises a startup error ("cjk check enabled but mojihen not
-installed; `pip install agentgate[cjk]` or disable [checks].cjk"). Never silent.
+installed; `pip install agent-write-gate[cjk]` or disable [checks].cjk"). Never silent.
 
 unicode (built-in; stdlib only): minimal membership tests, not a port of a big
 tool. Context-sensitive to control false positives:
@@ -279,7 +279,7 @@ graceful default otherwise.
 
 ```toml
 [checks]
-cjk     = false           # default off so stdlib core installs+runs; enable with agentgate[cjk]
+cjk     = false           # default off so stdlib core installs+runs; enable with agent-write-gate[cjk]
 unicode = true
 
 [checks.cjk]
@@ -297,9 +297,9 @@ medium = "warn"
 low = "ignore"
 ```
 
-Packaging: core install (`pip install agentgate`) = stdlib-only, ships
+Packaging: core install (`pip install agent-write-gate`) = stdlib-only, ships
 adapter/registry/policy/unicode + CLI and works with the default config. `pip
-install agentgate[cjk]` pulls in `mojihen`; then set `cjk = true`. Separate PyPI
+install agent-write-gate[cjk]` pulls in `mojihen`; then set `cjk = true`. Separate PyPI
 packages so each is independently adoptable.
 
 ---
@@ -365,7 +365,7 @@ agentgate/
 ## 7. Relationship to mojihen
 
 mojihen = the CJK engine (its own PyPI package, independently useful). agentgate =
-the cross-agent gate that composes it (optional extra `agentgate[cjk]`) with the
+the cross-agent gate that composes it (optional extra `agent-write-gate[cjk]`) with the
 stdlib Unicode-safety check, under one policy and one model-readable feedback
 contract. The `cjk` check is a hard (loud) dependency when enabled -- never a
 silent no-op; default config leaves it off so the core installs clean. Two focused

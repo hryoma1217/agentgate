@@ -31,6 +31,9 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
+# Demo intermediate frames (demo.gif is committed; per-step PNGs are not)
+demo/frames/
+
 # Secrets (never commit)
 .env
 .env.*

@@ -6,6 +6,8 @@ to write (PreToolUse) or just wrote (PostToolUse) and either blocks the write or
 hands the model a structured feedback blob so the loop self-corrects without a
 human round-trip.
 
+![agentgate demo](demo/demo.gif)
+
 ## Problem
 
 AI coding agents write files directly. They introduce defect classes that

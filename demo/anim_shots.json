@@ -1,0 +1,16 @@
+{
+  "out_dir": "frames",
+  "base": "file://./",
+  "defaults": {
+    "viewport": {"width": 1240, "height": 900},
+    "scale": 2,
+    "wait_ms": 300,
+    "full_page": false
+  },
+  "shots": [
+    {"name": "f1", "url": "anim.html", "eval_js": "window.showStep(1)"},
+    {"name": "f2", "url": "anim.html", "eval_js": "window.showStep(2)"},
+    {"name": "f3", "url": "anim.html", "eval_js": "window.showStep(3)"},
+    {"name": "f4", "url": "anim.html", "eval_js": "window.showStep(4)"}
+  ]
+}

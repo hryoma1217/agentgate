@@ -106,8 +106,10 @@ agentgate checks
 agentgate --version
 ```
 
-Exit codes:
-- `hook`: 0 = allow; 2 = block (deny in Pre / feedback in Post) or error.
+Exit codes (`hook` is agent-aware -- see the per-agent setups below):
+- Claude Code: 0 = allow; 2 = block (deny in Pre / feedback in Post) or error.
+- Codex: always exits 0; a block is signalled by a stdout JSON
+  `permissionDecision: "deny"` (on Codex, exit 2 **fails open**).
 - `scan`: 0 = no blocking findings; 1 = blocking findings; 2 = error.
 
 ## Hook setup: Claude Code
@@ -133,22 +135,22 @@ Only PreToolUse provides true prevention. See `hooks/claude-code.md`.
 
 ## Hook setup: Codex
 
+Codex hooks live in `~/.codex/config.toml` (TOML array-of-tables, **not** JSON).
 Only `apply_patch` is supported (Codex's primary write tool):
 
-```json
-{
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "apply_patch",
-        "hooks": [{"type": "command", "command": "agentgate hook --stdin"}]
-      }
-    ]
-  }
-}
+```toml
+[[hooks.PreToolUse]]
+matcher = "apply_patch"
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "agentgate hook --stdin"
 ```
 
-See `hooks/codex.md` for PostToolUse setup and coverage limits.
+To block, agentgate emits a stdout JSON `permissionDecision: "deny"` and exits 0
+(on Codex, exit 2 **fails open**, so the deny must be on stdout). `apply_patch`
+also fires PostToolUse, but that runs after the write and is logging-only. See
+`hooks/codex.md` for details, verification, and coverage limits.
 
 ## pre-commit
 

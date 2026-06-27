@@ -100,9 +100,10 @@ def cmd_hook(args: List[str]) -> int:
 
     Reads a JSON hook payload from stdin, runs enabled checks, applies policy.
 
-    Exit codes:
-      0 = allow
-      2 = block (deny in PreToolUse; feedback in PostToolUse)
+    Exit codes (agent-aware):
+      Claude Code: 0 = allow; 2 = block (deny in PreToolUse; feedback in Post).
+      Codex: always 0 -- a block is a stdout JSON permissionDecision=deny
+        (exit 2 fails open on Codex, so the deny must ride on stdout).
     """
     if "--stdin" not in args:
         print("agentgate hook: expected --stdin flag", file=sys.stderr)
@@ -179,6 +180,20 @@ def cmd_hook(args: List[str]) -> int:
     if decide_block(actionable, cfg):
         report = block_report(actionable, file_path=event.file_path)
         print(report, file=sys.stderr)
+        if event.agent == "codex":
+            # Codex treats a non-zero hook exit as a *failure* (fail-open). The only
+            # way to deny a Codex apply_patch is a stdout JSON decision with exit 0.
+            if event.phase == "pre":
+                deny = {
+                    "hookSpecificOutput": {
+                        "hookEventName": "PreToolUse",
+                        "permissionDecision": "deny",
+                        "permissionDecisionReason": report,
+                    }
+                }
+                sys.stdout.write(json.dumps(deny, ensure_ascii=False) + "\n")
+            # PostToolUse cannot prevent the write; logging-only on Codex.
+            return 0
         return 2
 
     # Non-blocking warn-level issues: surface to stderr but do not block (exit 0).

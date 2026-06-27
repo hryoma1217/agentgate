@@ -1,4 +1,4 @@
-# agentgate -- design (v0.3)
+# agentgate -- design (v0.4)
 
 > An agent-hook safety gate for AI-written code. Wire it into Claude Code or
 > Codex as a hook; it runs a battery of deterministic checks on the text an agent
@@ -6,11 +6,13 @@
 > write or hands the model a structured "here is what is wrong, rewrite it" signal
 > so the loop self-corrects without a human round-trip.
 
-Status: design v0.3 -- revised after two rounds of design review. Source-of-truth
-for the build. (Note: this spec is deliberately written
-in ASCII punctuation only -- a Unicode-safety tool should not ship a spec with
-stray smart-quotes or arrow glyphs; the only non-ASCII characters in this file are
-the intentional CJK examples 闾/閾.)
+Status: design v0.4 -- revised after two rounds of design review AND a round of
+empirical verification against a real `codex-cli 0.141.0` hook run (see section 0.1
+and section 3.5). The v0.3 Codex assumptions were wrong on two points; v0.4 records
+the measured behavior and the corrected contract. Source-of-truth for the build.
+(Note: this spec is deliberately written in ASCII punctuation only -- a
+Unicode-safety tool should not ship a spec with stray smart-quotes or arrow glyphs;
+the only non-ASCII characters in this file are the intentional CJK examples 闾/閾.)
 
 ---
 
@@ -18,9 +20,12 @@ the intentional CJK examples 闾/閾.)
 
 Round 1 (8 points) and round 2 (3 points), all addressed:
 
-1. Honest enforcement boundary: only PreToolUse can prevent a write (exit 2 denies
-   the call). PostToolUse runs after the write and only feeds remediation text
-   back to the model; it cannot roll back. See section 3.5.
+1. Honest enforcement boundary: only PreToolUse can prevent a write (Claude: exit 2
+   denies the call; Codex: a stdout `permissionDecision:"deny"` JSON with exit 0 --
+   see 0.1.3 and 3.5). PostToolUse runs after the write and cannot roll back; it
+   only feeds remediation text back to the model on Claude (exit 2 + stderr). On
+   Codex the model-facing PostToolUse remediation channel is UNVERIFIED on 0.141.0,
+   so agentgate treats Codex Post as logging-only (stderr + exit 0). See section 3.5.
 2. Real Codex adapter: Codex wraps `apply_patch`; the hook payload carries
    `tool_input.command` (the patch envelope), not a tidy `{file_path, content}`.
    The adapter parses `apply_patch` to recover added lines, or limits support when
@@ -46,6 +51,45 @@ Round 1 (8 points) and round 2 (3 points), all addressed:
 Round-2 fixes folded in: (a) `cjk = false` by default (core stays installable);
 (b) bare-ignore removed entirely -- suppression is rule-specific only;
 (c) the whole spec is ASCII-punctuation-only (no stray Unicode artifacts).
+
+### 0.1 Round 3 -- empirical verification (codex-cli 0.141.0)
+
+v0.3 was written against documented/third-party descriptions of Codex hooks. A real
+`codex exec` run with a logging hook injected ephemerally via `-c` (config.toml
+never written; `--ignore-user-config` so the user's config is not loaded;
+`--dangerously-bypass-hook-trust` to run the injected hook) measured the actual
+behavior. Three findings, two of which CONTRADICT v0.3:
+
+1. apply_patch DOES fire PreToolUse and PostToolUse (v0.3 hedged "best-effort").
+   The earlier worry that apply_patch may not emit PreToolUse is false for 0.141.0.
+
+2. Real Codex PreToolUse payload for apply_patch (CONFIRMED shape):
+   ```json
+   {"session_id","turn_id","transcript_path","cwd","hook_event_name":"PreToolUse",
+    "model","permission_mode","tool_name":"apply_patch",
+    "tool_input":{"command":"*** Begin Patch\n*** Add File: greeting.txt\n+...\n*** End Patch"},
+    "tool_use_id":"exec-<uuid>"}
+   ```
+   It carries BOTH `hook_event_name` AND `tool_name` (just like Claude Code), but
+   `tool_input` holds only `command`, not `{file_path, content}`. PostToolUse adds
+   `tool_response`. => v0.3's adapter routing (section 3.2) had a latent bug: the
+   "has hook_event_name + tool_name -> claude-code, extract content/new_string"
+   branch fires FIRST and finds no content in `{command}`, returning empty => the
+   gate exits 0 (fail-open) and never reaches the apply_patch parser. Codex
+   corruption was being MISSED. v0.4 section 3.2 reorders detection.
+
+3. Block mechanism (CONFIRMED by measuring whether the file got written):
+   | hook returns                                              | Codex result          |
+   |----------------------------------------------------------|-----------------------|
+   | stdout JSON permissionDecision="deny", exit 0            | BLOCKS (no write)     |
+   | legacy stdout {"decision":"block","reason":...}, exit 0  | BLOCKS (no write)     |
+   | stderr + exit 2                                           | "hook Failed" -> WRITE PROCEEDS (fail-open) |
+   | stdout JSON deny + exit 2                                 | "hook Failed" -> WRITE PROCEEDS |
+   => For Codex, exit code 2 is treated as a hook *failure* (fail-open), NOT a
+   block. The ONLY way to deny a Codex apply_patch is stdout JSON
+   `permissionDecision:"deny"` with **exit 0**. This DIRECTLY contradicts v0.3
+   section 3.5 ("Codex ... exit 2 ... likewise rejects"). Claude Code, by contrast,
+   blocks on exit 2 + stderr. The contract must therefore be agent-aware.
 
 ---
 
@@ -90,6 +134,11 @@ and makes no claim about:
 - pre-existing files, generated artifacts, or out-of-band edits;
 - editor/IDE agents that do not emit the supported hook payloads;
 - Codex tool paths other than `apply_patch` (best-effort; fail-open otherwise);
+- per-file attribution inside a MULTI-file `apply_patch`: M1 collapses all added
+  lines into one `content` and reports the FIRST target path. The checks still run
+  over every added line (a corrupt char in any file is caught), but the reported
+  `file_path` and the code-vs-prose profile are taken from the first file only.
+  Per-hunk attribution is an M2 refinement (see 3.2);
 - anything a PostToolUse hook is asked to undo -- it cannot roll back a completed
   write, only report it back to the model.
 
@@ -115,9 +164,10 @@ agent hook event (stdin JSON)
  |  policy      |
  +------+-------+
         v
- decision: PreToolUse  -> exit 2 = DENY write
-           PostToolUse -> exit 2 = feedback (no rollback)
-           exit 0 = allow
+ decision: Claude PreToolUse  -> exit 2 + stderr = DENY write
+           Codex  PreToolUse  -> stdout JSON permissionDecision:deny + exit 0 = DENY
+           PostToolUse        -> feedback only (no rollback)
+           allow              -> exit 0
 ```
 
 ### 3.1 Data model
@@ -149,23 +199,35 @@ Single JSON object on stdin. Tolerant extraction; `phase`/`agent` inferred from 
 payload's own fields (inference only affects the decision dialect in 3.5, never
 check behavior).
 
-Claude Code (`hook_event_name` = `PreToolUse` | `PostToolUse`):
-`{hook_event_name, tool_name, tool_input:{file_path, content|new_string}}`.
--> agent=claude-code, phase from hook_event_name, tool from tool_name, content from
-`content` (Write) or `new_string` (Edit).
+Detection ORDER matters (this is the v0.4 fix; see 0.1.2). Both Claude Code and
+Codex send `hook_event_name` + `tool_name`, so the adapter must NOT route on the
+mere presence of those two fields. It routes on the tool identity / payload shape:
 
-Codex (wraps `apply_patch`): payload exposes `tool_input.command` containing an
-`apply_patch` envelope (the `*** Begin Patch` / `*** Add File:` / `*** Update File:`
-/ `+`-prefixed add lines / `*** End Patch` form). The adapter:
-1. locates the `apply_patch` body in `command` (string or argv list),
-2. parses it, collecting added lines (lines starting with `+`, excluding any `+++`
-   header) and the target path from `*** Add File:` / `*** Update File:`,
-3. joins added lines as `content`.
-If the envelope cannot be parsed -> WriteEvent with empty content and tool=unknown
-(gate fails open; see 2.1). Codex support is explicit and bounded to `apply_patch`.
+1. apply_patch FIRST. If `tool_name == "apply_patch"`, OR `tool_input.command`
+   (string or argv list) contains an `apply_patch` envelope (`*** Begin Patch`),
+   treat it as Codex:
+   - parse the envelope, collecting added lines (lines starting with `+`, excluding
+     any `+++` header) and the target path from `*** Add File:` / `*** Update File:`,
+   - join added lines as `content`; agent=codex, tool=apply_patch, phase from
+     `hook_event_name`.
+   - If the envelope cannot be parsed -> empty content (gate fails open; see 2.1).
+   Codex support is explicit and bounded to `apply_patch`. M1 limitation: a
+   multi-file patch is collapsed to one `content` (all added lines) and the FIRST
+   target path -- every added line is still scanned, but `file_path` and the
+   code/prose profile come from the first file only. Per-hunk WriteEvent emission is
+   deferred to M2 (noted in 2.1).
 
-Generic / fallback: top-level `{file_path|path, content|text|new_string}`; the
-top-level object may itself be the tool_input. agent=generic, phase=unknown.
+2. Claude Code NEXT. Else if `hook_event_name` + `tool_name` are present (Write,
+   Edit, ...): agent=claude-code, phase from hook_event_name, tool from tool_name,
+   content from `content` (Write) or `new_string` (Edit), path from `file_path`.
+
+3. Generic / fallback. Top-level `{file_path|path, content|text|new_string}`; the
+   top-level object may itself be the tool_input. agent=generic, phase=unknown.
+
+(Rationale: the confirmed Codex payload (0.1.2) has `tool_name:"apply_patch"` AND
+`hook_event_name`. The old "hook_event_name && tool_name -> claude-code" first
+branch swallowed it and extracted no content -> fail-open miss. Checking
+apply_patch first closes that hole.)
 
 Empty extractable text -> exit 0 (nothing to gate). Non-JSON stdin -> exit 0
 (fail-open; the gate must never wedge an agent on malformed input).
@@ -230,18 +292,42 @@ the model can emit.
 
 ### 3.5 Decision and feedback contract (per phase)
 
-The decision dialect depends on `phase`:
+The decision dialect depends on BOTH `phase` and `agent` (the two agents disagree
+on what a block looks like -- see 0.1.3, measured on codex-cli 0.141.0):
 
-- PreToolUse (true prevention):
-  - block -> exit 2: Claude Code denies the tool call and shows stderr to the
-    model; Codex (PreToolUse around apply_patch) likewise rejects. Only path that
-    prevents the write.
+- PreToolUse block (true prevention):
+  - Claude Code (agent=claude-code): write block report to stderr, `exit 2`.
+    Claude denies the tool call and feeds stderr to the model. (unchanged)
+  - Codex (agent=codex): print a single JSON object to **stdout** and `exit 0`:
+    ```json
+    {"hookSpecificOutput":{"hookEventName":"PreToolUse",
+      "permissionDecision":"deny","permissionDecisionReason":"<block report>"}}
+    ```
+    The block report is ALSO written to stderr (for humans / logs), but the
+    machine-actionable deny is the stdout JSON. exit 0 is mandatory: Codex treats a
+    non-zero hook exit as a *failure* and lets the write through (fail-open). stdout
+    must contain ONLY the JSON object (cmd_hook prints everything else to stderr).
+  - generic / unknown agent, and the `phase=unknown` case (generic adapter, 3.2):
+    keep the Claude dialect (stderr block report + exit 2). A real Codex apply_patch
+    is detected as agent=codex by 3.2 and gets the JSON path; for truly-unknown
+    inputs exit 2 is the conservative default that blocks Claude-like consumers (and
+    is a harmless no-op fail-open on Codex, which is already the documented caveat
+    for non-detected Codex paths -- see 2.1). So a blocking finding with unknown
+    phase is ALWAYS surfaced (stderr + exit 2), never silently dropped.
+- PostToolUse (remediation only -- the write already happened, no rollback):
+  - block -> write the block report to stderr; `exit 2` for Claude (Claude surfaces
+    stderr to the model as feedback). For Codex, PostToolUse cannot prevent or undo
+    the write and the model-facing remediation channel is UNVERIFIED on 0.141.0
+    (only PreToolUse denial was measured); agentgate therefore treats Codex Post as
+    logging-only: write the report to stderr, `exit 0` (exit 2 is just a logged hook
+    failure on Codex, not feedback). Either way the prior write stands.
   - allow -> exit 0.
-- PostToolUse (remediation only -- the write already happened):
-  - block -> exit 2: stderr is surfaced to the model as feedback so it issues a
-    corrective follow-up write. Does NOT undo the prior write.
-  - allow -> exit 0.
-- unknown phase (generic adapter): treat as PostToolUse semantics (feedback).
+- warn-level (actionable but mapped to `warn`, not `block`, any agent/phase): the
+  warn report is ALWAYS written to stderr (never suppressed), nothing on stdout,
+  exit 0. allow (no actionable issues): nothing on stdout/stderr, exit 0.
+
+The block JSON deny is scoped to PreToolUse, the only phase where it can actually
+prevent the write.
 
 Block report on stderr is model-readable:
 
@@ -266,7 +352,9 @@ agentgate --version
 ```
 
 `scan` exit codes: 0 = no blocking findings; 1 = blocking findings.
-`hook` exit codes: 0 = allow; 2 = block (deny in Pre / feedback in Post) or usage.
+`hook` exit codes: 0 = allow OR Codex deny-via-stdout-JSON; 2 = Claude block
+(deny in Pre / feedback in Post) or usage error. (The exit code is agent-aware: a
+Codex apply_patch block is exit 0 with a stdout deny JSON; see 3.5.)
 
 `_enable_utf8_io()` at startup (Windows cp932) -- same fix proven in mojihen.
 
@@ -335,7 +423,7 @@ agentgate/
     test_unicode_check.py      # bidi/invis positives
     test_unicode_falsepos.py   # Arabic/Persian/Hindi ZWNJ, emoji ZWJ, BOM@0, prose -> clean
     test_policy.py             # severity->action, rule-specific suppression, bidi not suppressible
-    test_hook_exit.py          # pre-block=2, post-block=2, allow=0, non-json=0, empty=0
+    test_hook_exit.py          # Claude pre/post-block=2; Codex pre-block=exit0+stdout deny JSON; allow=0, non-json=0, empty=0
     test_scan.py               # scan fixtures; json/sarif validity
     test_cjk_integration.py    # mojihen present -> MH001 blocks; enabled+absent -> startup error
     fixtures/
@@ -352,9 +440,15 @@ agentgate/
 - unicode false-positive gate (critical): Arabic/Persian text with ZWNJ, Hindi with
   ZWJ, emoji ZWJ sequences, a BOM at offset 0, and ordinary Markdown prose all
   yield zero issues under default policy. Legit CJK/emoji clean.
-- policy: high->block->exit2; medium->warn->exit0; rule-specific suppression works;
-  AG-BIDI not silenced unless allow_bidi_suppression set.
-- hook exit codes: pre-block=2, post-block=2, allow=0, non-JSON=0, empty=0.
+- policy: high->block (Claude exit2 / Codex stdout deny JSON+exit0);
+  medium->warn->exit0; rule-specific suppression works; AG-BIDI not silenced unless
+  allow_bidi_suppression set.
+- hook exit codes: Claude pre-block=2, Claude post-block=2, allow=0, non-JSON=0,
+  empty=0. Codex apply_patch pre-block=exit 0 WITH a stdout
+  `permissionDecision:"deny"` JSON whose reason carries the block report; the real
+  Codex payload shape (`tool_name:"apply_patch"`, `tool_input:{command}`,
+  `hook_event_name` present) routes through the apply_patch parser and produces the
+  added-line content (regression for the v0.3 misroute bug).
 - cjk integration: mojihen present -> corrupt line blocks via MH001; cjk enabled
   with mojihen monkeypatched absent -> startup error (not silent).
 - self-contained core: full suite green with only stdlib for non-cjk tests; cjk
@@ -383,3 +477,48 @@ packages; the gate + open registry is the ecosystem layer.
 - M2: phantom external wrapper (slopcheck), homoglyph hardening, richer
   external-tool wrappers.
 - M3: Cursor / Aider adapters, plugin docs for `register`, SARIF polish.
+
+---
+
+## 9. Codex hook wiring (real format) and verification
+
+### 9.1 Config is TOML, not settings.json JSON
+
+Codex hooks live in `~/.codex/config.toml` (or `$CODEX_HOME/config.toml`) as
+array-of-tables, modeled on Claude Code's three levels (event -> matcher group ->
+handlers) but in TOML. The v0.3 hooks/codex.md showed a Claude-Code `settings.json`
+JSON block, which Codex does NOT read. Correct form:
+
+```toml
+[[hooks.PreToolUse]]
+matcher = "apply_patch"
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "agentgate hook --stdin"
+```
+
+`matcher` accepts a tool name (`apply_patch`, `Bash`) or a regex (`.*`). After
+adding a hook, Codex requires you to trust it once (interactive), or pass
+`--dangerously-bypass-hook-trust` for vetted automation.
+
+### 9.2 Boundary-safe verification recipe (how 0.1 was measured)
+
+To verify against a real Codex without touching the user's `~/.codex/config.toml`:
+
+```
+codex exec \
+  --ignore-user-config \
+  --skip-git-repo-check \
+  --dangerously-bypass-approvals-and-sandbox \
+  --dangerously-bypass-hook-trust \
+  -C <workdir> \
+  -c 'hooks.PreToolUse=[{matcher="apply_patch",hooks=[{type="command",command="<hook>"}]}]' \
+  "<task that triggers an apply_patch>"
+```
+
+Flags: `--ignore-user-config` skips the user's `config.toml`;
+`--dangerously-bypass-hook-trust` runs the injected hook without persisted trust.
+Auth still resolves from the default `CODEX_HOME`; `-c` injects the hook only for
+that invocation; `config.toml` is never written. This is the exact harness used in
+.codex-verify/ to capture the payload and block-mechanism evidence in 0.1.

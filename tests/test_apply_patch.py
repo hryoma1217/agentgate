@@ -64,17 +64,24 @@ class TestParseApplyPatch(unittest.TestCase):
         self.assertIn("first line", content)
         self.assertIn("second line", content)
 
-    def test_excludes_plus_plus_plus_header(self):
+    def test_double_plus_source_line_is_real_content(self):
+        # apply_patch prefixes every added line with a single '+'. A source line
+        # that itself starts with '++' (e.g. '++counter') is encoded as '+++counter'
+        # in the envelope. It is REAL content, not a unified-diff header, and must
+        # be preserved (exactly one '+' stripped) so corruption on it is not hidden.
+        bidi = chr(0x202E)
         patch = (
             "*** Begin Patch\n"
             "*** Add File: f.py\n"
-            "+++ b/f.py\n"
-            "+real added line\n"
+            "+++counter = \"" + bidi + "x\"\n"
+            "+normal line\n"
             "*** End Patch"
         )
         path, content = parse_apply_patch(patch)
-        self.assertNotIn("+++", content)
-        self.assertIn("real added line", content)
+        self.assertEqual(path, "f.py")
+        self.assertIn("++counter", content)   # one '+' stripped, content retained
+        self.assertIn(bidi, content)          # the bidi char survives -> check can catch it
+        self.assertIn("normal line", content)
 
     def test_no_begin_marker(self):
         path, content = parse_apply_patch("just some text")

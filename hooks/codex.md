@@ -4,7 +4,7 @@ Wire agentgate into Codex CLI's hook system for the `apply_patch` tool.
 
 Verified against codex-cli 0.141.0. The block contract below (stdout JSON
 `permissionDecision: "deny"` + exit 0) and the firing facts were measured
-empirically; see `.codex-verify/FINDINGS.md` in this repo for the raw evidence.
+empirically; see `docs/codex-verification.md` in this repo for the raw evidence.
 
 ## Supported tool: apply_patch only
 

@@ -34,6 +34,9 @@ Thumbs.db
 # Demo intermediate frames (demo.gif is committed; per-step PNGs are not)
 demo/frames/
 
+# Local empirical verification scratch (machine-specific paths; not for publishing)
+.codex-verify/
+
 # Secrets (never commit)
 .env
 .env.*

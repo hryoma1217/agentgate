@@ -520,5 +520,6 @@ codex exec \
 Flags: `--ignore-user-config` skips the user's `config.toml`;
 `--dangerously-bypass-hook-trust` runs the injected hook without persisted trust.
 Auth still resolves from the default `CODEX_HOME`; `-c` injects the hook only for
-that invocation; `config.toml` is never written. This is the exact harness used in
-.codex-verify/ to capture the payload and block-mechanism evidence in 0.1.
+that invocation; `config.toml` is never written. This is the exact harness used to
+capture the payload and block-mechanism evidence summarized in
+`docs/codex-verification.md`.

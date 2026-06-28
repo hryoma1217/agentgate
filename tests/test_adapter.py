@@ -118,6 +118,63 @@ class TestCodexAdapter(unittest.TestCase):
         self.assertIn("x = 1", event.content)
 
 
+class TestCodexRealShape(unittest.TestCase):
+    """Regression tests for the REAL Codex payload shape.
+
+    The real Codex apply_patch hook carries BOTH hook_event_name AND tool_name
+    (like Claude Code), but tool_input holds only {command}.  Previously this
+    was misrouted to the Claude Code branch which found no content/new_string
+    -> returned empty content -> gate exited 0 (fail-open MISS).
+    """
+
+    def _real_codex_payload(self, hook_event_name, patch_command, extra=None):
+        d = {
+            "hook_event_name": hook_event_name,
+            "tool_name": "apply_patch",
+            "tool_input": {"command": patch_command},
+        }
+        if extra:
+            d.update(extra)
+        return json.dumps(d)
+
+    def test_real_codex_pre_routes_to_codex(self):
+        """Real Codex PreToolUse payload must route to agent='codex', NOT 'claude-code'."""
+        patch = (
+            "*** Begin Patch\n"
+            "*** Add File: app.py\n"
+            "+x = 1\n"
+            "*** End Patch"
+        )
+        raw = self._real_codex_payload("PreToolUse", patch)
+        event = from_stdin_json(raw)
+        self.assertEqual(event.agent, "codex")
+        self.assertNotEqual(event.agent, "claude-code")
+        self.assertEqual(event.tool, "apply_patch")
+        self.assertEqual(event.phase, "pre")
+        self.assertIn("x = 1", event.content)
+        self.assertEqual(event.file_path, "app.py")
+
+    def test_real_codex_post_has_tool_response(self):
+        """Real Codex PostToolUse payload (with tool_response) -> agent='codex', phase='post'."""
+        patch = (
+            "*** Begin Patch\n"
+            "*** Add File: app.py\n"
+            "+x = 1\n"
+            "*** End Patch"
+        )
+        raw = self._real_codex_payload("PostToolUse", patch, extra={"tool_response": {}})
+        event = from_stdin_json(raw)
+        self.assertEqual(event.agent, "codex")
+        self.assertEqual(event.phase, "post")
+
+    def test_tool_name_apply_patch_unparsable(self):
+        """tool_name=apply_patch but no patch envelope -> agent='codex', content='' (fail-open)."""
+        raw = self._real_codex_payload("PreToolUse", "garbage")
+        event = from_stdin_json(raw)
+        self.assertEqual(event.agent, "codex")
+        self.assertEqual(event.content, "")
+
+
 class TestGenericAdapter(unittest.TestCase):
     """Generic fallback payloads."""
 

@@ -13,7 +13,7 @@ Handles the envelope format:
 
 Returns (path, added_text) where:
   - path is the first Add File or Update File path found
-  - added_text is the joined added lines ('+'-prefixed, excluding '+++' diff headers)
+  - added_text is the joined added lines (each '+'-prefixed; exactly one '+' stripped)
 
 Returns ("", "") if the envelope is missing or cannot be parsed.
 """
@@ -65,8 +65,12 @@ def parse_apply_patch(command: str) -> Tuple[str, str]:
             candidate = line[len("*** Delete File:"):].strip()
             if candidate and not file_path:
                 file_path = candidate
-        elif line.startswith("+") and not line.startswith("+++"):
-            # Added line: strip the leading '+'
+        elif line.startswith("+"):
+            # Added line: strip exactly one leading '+'. apply_patch envelopes use
+            # a single '+' per added line and '*** Add File:' for paths -- there are
+            # no unified-diff '+++' headers here, so an envelope line like '+++x'
+            # is real content '++x' and must NOT be dropped (doing so hid corruption
+            # on lines whose source starts with '++').
             added_lines.append(line[1:])
         # Context lines (no prefix or space prefix) and removed lines ('-') are ignored
 
